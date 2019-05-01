@@ -1,33 +1,43 @@
-# This script uses an ADAL app with app only permissions for authentication
+# This script uses an ADAL app with certificate and app only permissions for authentication
 # Feel free to change how you get an auth token, as there are many ways
-$appId = "<ADAL AppId with Group.ReadWrite.All>"
-$appSecret = "<ADAL App Secret with Group.ReadWrite.All>"
-$domain = "<tenant>.onmicrosoft.com"
+$certStore = "Cert:\CurrentUser\My"
+$tenantid = (Get-Content .\tenantid.txt).Trim()
+$appid = (Get-Content .\appid.txt).Trim()
+$thumb = (Get-Content .\cert-thumb.txt).Trim()
+Connect-AzureAD -TenantId $tenantid -ApplicationId $appid -CertificateThumbprint $thumb
+#$token = [Microsoft.Open.Azure.AD.CommonLibrary.AzureSession]::AccessTokens["AccessToken"].AccessToken
 
-Write-Host "Prompt for service user"
-Connect-PnPOnline -Scopes "Group.Read.All"
-$serviceToken = Get-PnPAccessToken
-# ID of AAD user to use for checking Planner
-$serviceUserId = "0168f652-85fa-4ae9-9c72-fb827d6caebc" 
+# Get ADAL access token against Graph
+$loginUri = 'https://login.microsoftonline.com'
+$resource = 'https://graph.microsoft.com'
+$certificate = Get-Item "$certStore\$thumb"
+$authority = "$loginUri/$tenantid"
+$context = [Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext]::new($authority)
+$cac = [Microsoft.IdentityModel.Clients.ActiveDirectory.ClientAssertionCertificate]::new($appId, $certificate)
+$tokenResult = $context.AcquireTokenAsync($resource, $cac).GetAwaiter().GetResult()
+$token = $tokenResult.AccessToken
+$useServiceUser = $false
+
+if ($useServiceUser) {
+    Write-Host "Prompt for service user to access planner"
+    Connect-PnPOnline -Scopes "Group.Read.All"
+    $serviceToken = Get-PnPAccessToken
+    # ID of AAD user to use for checking Planner
+    $serviceUserId = (Get-PnPAccessToken -Decoded).Payload.oid
+    #$serviceUserId = "0168f652-85fa-4ae9-9c72-fb827d6caebc" 
+}
 
 $today = (Get-Date)
 $warningDate = (Get-Date).AddDays(-30)
 $date = $today.ToString("yyyy'-'MM'-'dd") 
 $report = @()
-$reportFile = "c:\repos\espc18\ObsoleteGroups.html"
-$lastFile = "c:\repos\espc18\ObsoleteGroups.csv"
-
-$formFields = @{client_id = "$appId"; scope = "https://graph.microsoft.com/.default"; client_secret = "$appSecret"; grant_type = 'client_credentials'}
-$url = "https://login.microsoftonline.com/$domain/oauth2/v2.0/token"
-
-$result = Invoke-WebRequest -UseBasicParsing -Uri $url -Method Post -Body $formFields -ContentType "application/x-www-form-urlencoded"
-$result = ConvertFrom-Json -InputObject $result.Content
-$token = $result.access_token
+$reportFile = "c:\repos\Governance-Scripts\ObsoleteGroups.html"
+$lastFile = "c:\repos\Governance-Scripts\ObsoleteGroups.csv"
 
 function Get-GroupUsageReport() {
     try {
         $query = "https://graph.microsoft.com/beta/reports/getOffice365GroupsActivityDetail(period='D30')?`$format=application/json&`$top=200"
-        $headers = @{"Authorization" = "Bearer " + $token}
+        $headers = @{"Authorization" = "Bearer " + $token }
         $response = Invoke-RestMethod -Method Get -ContentType "application/json" -Uri $query -Headers $headers -UseBasicParsing
         $reportItems = $response.value
     
@@ -38,7 +48,7 @@ function Get-GroupUsageReport() {
             $nextLink = $response."@odata.nextLink"
             $reportItems += $response.value
         }
-        return ($reportItems | Sort-Object groupDisplayName) |? isDeleted -eq $false        
+        return ($reportItems | Sort-Object groupDisplayName) | ? isDeleted -eq $false        
     }
     catch {
         exit   
@@ -46,9 +56,10 @@ function Get-GroupUsageReport() {
 }
 function Get-GroupByName($displayName) {
     try {
-        $query = "https://graph.microsoft.com/v1.0/groups?`$filter=displayName eq '$displayName'"
-        $headers = @{"Authorization" = "Bearer " + $token}
+        $query = "https://graph.microsoft.com/v1.0/groups?`$filter=displayName eq '$displayName'&`$expand=owners"
+        $headers = @{"Authorization" = "Bearer " + $token }
         $response = Invoke-RestMethod -Method Get -ContentType "application/json" -Uri $query -Headers $headers -UseBasicParsing
+        
         return $response.value            
     }
     catch {
@@ -58,43 +69,27 @@ function Get-GroupByName($displayName) {
 
 function Renew-Group($groupId) {
     $query = "https://graph.microsoft.com/v1.0/groups/$groupId/renew"
-    $headers = @{"Authorization" = "Bearer " + $token}
+    $headers = @{"Authorization" = "Bearer " + $token }
     $response = Invoke-RestMethod -Method POST -ContentType "application/json" -Uri $query -Headers $headers -UseBasicParsing
     return $response.value
 }
 
 function Add-Member($groupId, $userId) {
-    try {
-        $query = "https://graph.microsoft.com/v1.0/groups/$groupId/members/`$ref"
-        $headers = @{"Authorization" = "Bearer " + $token}
-        $body = @"
-{
-    "@odata.id": "https://graph.microsoft.com/v1.0/directoryObjects/$userId"
-}    
-"@
-        $response = Invoke-RestMethod -Method POST -ContentType "application/json" -Uri $query -Headers $headers -Body $body -UseBasicParsing        
-        Start-Sleep 5
-    }
-    catch {
-        #Write-Host "Failed to add service user as member"
-    }
+    Add-AzureADGroupMember -ObjectId $groupId -RefObjectId $userId
+    Start-Sleep 5 # give it some time to sync
 }
 
 function Remove-Member($groupId, $userId) {
-    try {
-        $query = "https://graph.microsoft.com/v1.0/groups/$groupId/members/$userId/`$ref"
-        $headers = @{"Authorization" = "Bearer " + $token}
-        $response = Invoke-RestMethod -Method DELETE -ContentType "application/json" -Uri $query -Headers $headers -UseBasicParsing            
-    }
-    catch {
-        Write-Host "Failed to remove service user as member"
-    }
+    Remove-AzureADGroupMember -ObjectId $groupId -MemberId $userId
 }
 
 function Get-PlannerActive($groupId) {
+    if ( [string]::IsNullOrWhiteSpace($serviceToken)) {
+        return $false
+    }
     try {
         $plansQuery = "https://graph.microsoft.com/v1.0/groups/$groupId/planner/plans"
-        $headers = @{"Authorization" = "Bearer " + $serviceToken}
+        $headers = @{"Authorization" = "Bearer " + $serviceToken }
         $response = Invoke-RestMethod -Method GET -ContentType "application/json" -Uri $plansQuery -Headers $headers -UseBasicParsing
         
         $plans = $response.value
@@ -118,14 +113,21 @@ function Get-PlannerActive($groupId) {
 }
 
 function Get-AllowSharing($groupId) {
-    $query = "https://graph.microsoft.com/v1.0/groups/$groupId/settings"
-    $headers = @{"Authorization" = "Bearer " + $token}
-    $settings = Invoke-RestMethod -Method Get -ContentType "application/json" -Uri $query -Headers $headers -UseBasicParsing
 
-    $template = $settings.value |? templateId -eq '08d542b9-071f-4e16-94b0-74abb372e3d9'
-    if($null -ne $template) {
-        return [bool]::Parse($template.values.value)
+    $settings = Get-AzureADObjectSetting -TargetObjectId $groupId -TargetType Groups
+    $template = $settings | ? TemplateId -eq '08d542b9-071f-4e16-94b0-74abb372e3d9'
+    if ($null -ne $template) {
+        return $template.Values.Value
     }
+
+    # $query = "https://graph.microsoft.com/v1.0/groups/$groupId/settings"
+    # $headers = @{"Authorization" = "Bearer " + $token }
+    # $settings = Invoke-RestMethod -Method Get -ContentType "application/json" -Uri $query -Headers $headers -UseBasicParsing
+
+    # $template = $settings.value | ? templateId -eq '08d542b9-071f-4e16-94b0-74abb372e3d9'
+    # if ($null -ne $template) {
+    #     return [bool]::Parse($template.values.value)
+    # }
 
     return $true
 }
@@ -164,8 +166,14 @@ $groupStats | % {
     Write-Host "$($_.groupDisplayName) - refresh date $($_.reportRefreshDate)"
 
     $groupData = Get-GroupByName -displayName $_.groupDisplayName
+    if ($groupData.groupTypes.Contains("DynamicMembership")) {
+        $ownerCount = "n/a"
+    }
+    else {
+        $ownerCount = $groupData.owners.count
+    }
 
-    if (-not $groupData.groupTypes.Contains("DynamicMembership")) {        
+    if (-not $groupData.groupTypes.Contains("DynamicMembership") -and $useServiceUser) {
         Add-Member -groupId $groupData.id -userId $serviceUserId
         $plannerActive = Get-PlannerActive -groupId $groupData.id
         #Remove-Member -groupId $groupData.id -userId $serviceUserId                
@@ -174,7 +182,7 @@ $groupStats | % {
     $hasTeams = ($groupData.resourceProvisioningOptions -ne $null -and $groupData.resourceProvisioningOptions.Contains("Team"))
     $hasYammer = ($groupData.resourceBehaviorOptions -ne $null -and $groupData.resourceBehaviorOptions.Contains("YammerProvisioning"))
 
-    $prevGroupData = $previousItems |? GroupId -eq $groupData.Id
+    $prevGroupData = $previousItems | ? GroupId -eq $groupData.Id
     if ($prevGroupData -ne $null) {
         $lastMsgDate = $prevGroupData.LastMessageActivity
     }
@@ -222,32 +230,34 @@ $groupStats | % {
         $status = "Fail"
     }
 
+    #TODO: Get owner count
     $reportLine = [PSCustomObject][Ordered]@{
-        GroupId             = $groupData.Id
-        GroupName           = $_.groupDisplayName
-        ManagedBy           = $_.ownerPrincipalName
-        Members             = $_.memberCount
-        ExternalGuests      = $_.externalMemberCount
+        GroupId              = $groupData.Id
+        GroupName            = $_.groupDisplayName
+        ManagedBy            = $_.ownerPrincipalName
+        Owners               = $ownerCount
+        Members              = $_.memberCount
+        ExternalGuests       = $_.externalMemberCount
         AllowExternalMembers = Get-AllowSharing -groupId $groupData.Id
-        Description         = $groupData.description
-        LastSPOActivity     = $_.lastActivityDate
-        MessageCount        = $_.exchangeMailboxTotalItemCount
-        LastMessageActivity = $lastMsgDate
-        TeamEnabled         = if ($hasTeams) {"Yes"} else {"No"}
-        YammerCount         = $_.yammerPostedMessageCount
-        LastYammerActivity  = $lastYammerDate
-        Classification      = $groupData.classification
-        PlannerActive       = $plannerActive
-        Active              = $status
+        Description          = $groupData.description
+        LastSPOActivity      = $_.lastActivityDate
+        MessageCount         = $_.exchangeMailboxTotalItemCount
+        LastMessageActivity  = $lastMsgDate
+        TeamEnabled          = if ($hasTeams) { "Yes" } else { "No" }
+        YammerCount          = $_.yammerPostedMessageCount
+        LastYammerActivity   = $lastYammerDate
+        Classification       = $groupData.classification
+        PlannerActive        = $plannerActive
+        Active               = $status
     }
     $report += $reportLine
-    if($status -eq 'Pass'){
+    if ($status -eq 'Pass') {
         Write-Host "`t$status" -ForegroundColor Green
     }
-    if($status -eq 'Warn'){
+    if ($status -eq 'Warn') {
         Write-Host "`t$status" -ForegroundColor Yellow
     }
-    if($status -eq 'Fail'){
+    if ($status -eq 'Fail') {
         Write-Host "`t$status" -ForegroundColor Red
     }
     # if (($spoActive -or $messageActive)) {

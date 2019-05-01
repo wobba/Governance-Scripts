@@ -1,15 +1,22 @@
-# This script uses an ADAL app with app only permissions for authentication
+# This script uses an ADAL app with certificate and app only permissions for authentication
 # Feel free to change how you get an auth token, as there are many ways
-$appId = "<ADAL AppId with Group.ReadWrite.All>"
-$appSecret = "<ADAL App Secret with Group.ReadWrite.All>"
-$domain = "<tenant>.onmicrosoft.com"
-$formFields = @{client_id = "$appId"; scope = "https://graph.microsoft.com/.default"; client_secret = "$appSecret"; grant_type = 'client_credentials'}
-$url = "https://login.microsoftonline.com/$domain/oauth2/v2.0/token"
+$certStore = "Cert:\CurrentUser\My"
+$tenantid = (Get-Content .\tenantid.txt).Trim()
+$appid = (Get-Content .\appid.txt).Trim()
+$thumb = (Get-Content .\cert-thumb.txt).Trim()
+Connect-AzureAD -TenantId $tenantid -ApplicationId $appid -CertificateThumbprint $thumb
 
-$result = Invoke-WebRequest -UseBasicParsing -Uri $url -Method Post -Body $formFields -ContentType "application/x-www-form-urlencoded"
-$result = ConvertFrom-Json -InputObject $result.Content
-$token = $result.access_token
+# Get ADAL access token against Graph
+$loginUri = 'https://login.microsoftonline.com'
+$resource = 'https://graph.microsoft.com'
+$certificate = Get-Item "$certStore\$thumb"
+$authority = "$loginUri/$tenantid"
+$context = [Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext]::new($authority)
+$cac = [Microsoft.IdentityModel.Clients.ActiveDirectory.ClientAssertionCertificate]::new($appId, $certificate)
+$tokenResult = $context.AcquireTokenAsync($resource, $cac).GetAwaiter().GetResult()
+$token = $tokenResult.AccessToken
 
+#Connect-MicrosoftTeams -ApplicationId $appid -TenantId $tenantid -CertificateThumbprint $thumb
 
 function Archive-Team($groupId) {
     $uri = "https://graph.microsoft.com/v1.0/teams/$groupId/archive"
@@ -22,7 +29,6 @@ function Archive-Team($groupId) {
     Invoke-RestMethod -Method POST -ContentType "application/json" -Headers $headers -Body $body -Uri $uri -UseBasicParsing
 
 }
-
 function Archive-Group($groupId) {
     Try {
         $OrgName = (Get-OrganizationConfig).Name
