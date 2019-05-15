@@ -5,7 +5,6 @@ $endDate = $currentDate.AddYears(10) # 10 years is nice and long
 $thumb = (New-SelfSignedCertificate -DnsName "madcow.dog" -CertStoreLocation $certStore -KeyExportPolicy Exportable -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" -NotAfter $endDate).Thumbprint
 $thumb > cert-thumb.txt # Save to file
 $pwd = ConvertTo-SecureString -String $pwd -Force -AsPlainText
-#Export-PfxCertificate -cert "cert:\localmachine\my\$thumb" -FilePath .\madcow.pfx -Password $pwd
 Export-PfxCertificate -cert "$certStore\$thumb" -FilePath .\madcow.pfx -Password $pwd
 $path = (Get-Item -Path ".\").FullName
 $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate("$path\madcow.pfx", $pwd)
@@ -35,6 +34,8 @@ $tenant = Get-AzureADTenantDetail
 $tenant.ObjectId > tenantid.txt
 $appId = $application.AppId
 $appId > appid.txt
+
+Start-Sleep 10 # give it some seconds before connecting
 Connect-AzureAD -TenantId $tenant.ObjectId -ApplicationId  $Application.AppId -CertificateThumbprint $thumb
 
 [Microsoft.Open.Azure.AD.CommonLibrary.AzureSession]::AccessTokens["AccessToken"]
