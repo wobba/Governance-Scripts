@@ -31,8 +31,8 @@ $today = (Get-Date)
 $warningDate = (Get-Date).AddDays(-30)
 $date = $today.ToString("yyyy'-'MM'-'dd") 
 $report = @()
-$reportFile = "c:\repos\Governance-Scripts\ObsoleteGroups.html"
-$lastFile = "c:\repos\Governance-Scripts\ObsoleteGroups.csv"
+$reportFile = ".\ObsoleteGroups.html"
+$lastFile = ".\ObsoleteGroups.csv"
 
 function Get-GroupUsageReport() {
     try {
@@ -48,10 +48,12 @@ function Get-GroupUsageReport() {
             $nextLink = $response."@odata.nextLink"
             $reportItems += $response.value
         }
+        Write-Host "Returned $($reportItems.length) groups" -ForegroundColor Green
         return ($reportItems | Sort-Object groupDisplayName) | ? isDeleted -eq $false        
     }
     catch {
-        exit   
+        Write-Host $_
+        exit
     }
 }
 function Get-GroupByName($displayName) {
@@ -63,6 +65,7 @@ function Get-GroupByName($displayName) {
         return $response.value            
     }
     catch {
+        Write-Host $_
         exit
     }
 }
@@ -113,7 +116,6 @@ function Get-PlannerActive($groupId) {
 }
 
 function Get-AllowSharing($groupId) {
-
     $settings = Get-AzureADObjectSetting -TargetObjectId $groupId -TargetType Groups
     $template = $settings | ? TemplateId -eq '08d542b9-071f-4e16-94b0-74abb372e3d9'
     if ($null -ne $template) {
@@ -164,8 +166,14 @@ Write-Host "Extracting list of Office 365 Groups to be checked..."
 $groupStats = Get-GroupUsageReport
 $groupStats | % {
     Write-Host "$($_.groupDisplayName) - refresh date $($_.reportRefreshDate)"
-
+    
     $groupData = Get-GroupByName -displayName $_.groupDisplayName
+
+    if($groupData.length -gt 1) {
+        Write-Host "`tMultiple groups returned - skipping"
+        return
+    }
+
     if ($groupData.groupTypes.Contains("DynamicMembership")) {
         $ownerCount = "n/a"
     }
