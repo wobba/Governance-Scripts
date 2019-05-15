@@ -48,7 +48,7 @@ function Get-GroupUsageReport() {
             $nextLink = $response."@odata.nextLink"
             $reportItems += $response.value
         }
-        Write-Host "Returned $($reportItems.length) groups" -ForegroundColor Green
+        Write-Host "Returned $($reportItems.length) groups"
         return ($reportItems | Sort-Object groupDisplayName) | ? isDeleted -eq $false        
     }
     catch {
@@ -171,6 +171,11 @@ $groupStats | % {
 
     if($groupData.length -gt 1) {
         Write-Host "`tMultiple groups returned - skipping"
+        return
+    }
+
+    if($groupData -eq $null) {
+        Write-Host "`tGroup deleted - skipping"
         return
     }
 
