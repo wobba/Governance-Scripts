@@ -1,4 +1,5 @@
 $adalUrlIdentifier = "https://madcow.dog/AzureADPosh"
+$dummyReplyUrl = "https://www.puzzlepart.com"
 $pwd = "spc19"
 $certStore = "Cert:\CurrentUser\My"
 $currentDate = Get-Date
@@ -27,11 +28,11 @@ $reqGraph.ResourceAppId = $svcPrincipal.AppId
 $reqGraph.ResourceAccess = $appPermission
 
 # Create Azure Active Directory Application (ADAL App)
-$application = New-AzureADApplication -DisplayName "AzureADPosh" -IdentifierUris $adalUrlIdentifier -ReplyUrls $adalUrlIdentifier -RequiredResourceAccess $reqGraph
+$application = New-AzureADApplication -DisplayName "AzureADPosh" -IdentifierUris $adalUrlIdentifier -ReplyUrls $dummyReplyUrl -RequiredResourceAccess $reqGraph
 New-AzureADApplicationKeyCredential -ObjectId $application.ObjectId -CustomKeyIdentifier "AzureADPosh" -Type AsymmetricX509Cert -Usage Verify -Value $keyValue -StartDate $currentDate -EndDate $endDate.AddDays(-1)
 
-$authContext = New-Object "Microsoft.IdentityModel.Clients.ActiveDirectory.AuthenticationContext" -ArgumentList "https://login.microsoftonline.com/$($tenant.ObjectId)"
-$consentUri = $authContext.GetAuthorizationRequestUrlAsync("https://graph.microsoft.com", $application.AppId, $adalUrlIdentifier, [Microsoft.IdentityModel.Clients.ActiveDirectory.UserIdentifier]::AnyUser, "prompt=admin_consent" ).GetAwaiter().GetResult()
+# https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-permissions-and-consent
+$consentUri = "https://login.microsoftonline.com/$($tenant.ObjectId)/adminconsent?client_id=$($application.AppId)&state=12345&redirect_uri=$dummyReplyUrl"
 $consentUri | clip
 Write-Host "Consent URL is copied to your clipboard - paste it into a browser, and ignore the redirect" -ForegroundColor Green
 Write-Host $consentUri -ForegroundColor Blue
