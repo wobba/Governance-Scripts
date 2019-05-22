@@ -4,7 +4,7 @@ $certStore = "Cert:\CurrentUser\My"
 $tenantid = (Get-Content .\tenantid.txt).Trim()
 $appid = (Get-Content .\appid.txt).Trim()
 $thumb = (Get-Content .\cert-thumb.txt).Trim()
-Connect-AzureAD -TenantId $tenantid -ApplicationId $appid -CertificateThumbprint $thumb
+$connection = Connect-AzureAD -TenantId $tenantid -ApplicationId $appid -CertificateThumbprint $thumb
 #$token = [Microsoft.Open.Azure.AD.CommonLibrary.AzureSession]::AccessTokens["AccessToken"].AccessToken
 
 # Get ADAL access token against Graph
