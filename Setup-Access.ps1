@@ -23,9 +23,14 @@ $tenant.ObjectId > tenantid.txt
 $svcPrincipal = Get-AzureADServicePrincipal -All $true | ? { $_.DisplayName -match "Microsoft Graph" }
 $appRole = $svcPrincipal.AppRoles | ? { $_.Value -eq "Reports.Read.All" }
 $appPermission = New-Object -TypeName "Microsoft.Open.AzureAD.Model.ResourceAccess" -ArgumentList "$($appRole.Id)", "Role"
+
+# Needed for Teams archiving
+$appRole2 = $svcPrincipal.AppRoles | ? { $_.Value -eq "Group.ReadWrite.All" }
+$appPermission2 = New-Object -TypeName "Microsoft.Open.AzureAD.Model.ResourceAccess" -ArgumentList "$($appRole2.Id)", "Role"
+
 $reqGraph = New-Object -TypeName "Microsoft.Open.AzureAD.Model.RequiredResourceAccess"
 $reqGraph.ResourceAppId = $svcPrincipal.AppId
-$reqGraph.ResourceAccess = $appPermission
+$reqGraph.ResourceAccess = $appPermission, $appPermission2
 
 # Create Azure Active Directory Application (ADAL App)
 $application = New-AzureADApplication -DisplayName "AzureADPosh" -IdentifierUris $adalUrlIdentifier -ReplyUrls $dummyReplyUrl -RequiredResourceAccess $reqGraph

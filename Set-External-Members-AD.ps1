@@ -1,4 +1,7 @@
-Connect-AzureAD
+$tenantid = (Get-Content .\tenantid.txt).Trim()
+$appid = (Get-Content .\appid.txt).Trim()
+$thumb = (Get-Content .\cert-thumb.txt).Trim()
+$connection = Connect-AzureAD -TenantId $tenantid -ApplicationId $appid -CertificateThumbprint $thumb
 
 # Group named Test2
 $groupId = "9c918e02-8ef4-4366-9be2-fb51c653cc0c"
@@ -11,12 +14,12 @@ if ($missingSettings) {
     $setting = $template.CreateDirectorySetting()
 }
 
-#$setting["AllowToAddGuests"] = $true
-$setting["AllowToAddGuests"] = $false
+#$settings["AllowToAddGuests"] = $true
+$settings["AllowToAddGuests"] = $false
 
 if ($missingSettings) {
-    New-AzureADObjectSetting -TargetType Groups -TargetObjectId $groupId -DirectorySetting $setting
+    New-AzureADObjectSetting -TargetType Groups -TargetObjectId $groupId -DirectorySetting $settings
 }
 else {
-    Set-AzureADObjectSetting -TargetType Groups -TargetObjectId $groupId -DirectorySetting $setting -Id $settings.Id
+    Set-AzureADObjectSetting -TargetType Groups -TargetObjectId $groupId -DirectorySetting $settings -Id $settings.Id
 }

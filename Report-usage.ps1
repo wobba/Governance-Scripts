@@ -24,7 +24,6 @@ if ($useServiceUser) {
     $serviceToken = Get-PnPAccessToken
     # ID of AAD user to use for checking Planner
     $serviceUserId = (Get-PnPAccessToken -Decoded).Payload.oid
-    #$serviceUserId = "0168f652-85fa-4ae9-9c72-fb827d6caebc" 
 }
 
 $today = (Get-Date)
@@ -273,6 +272,7 @@ $groupStats | % {
     if ($status -eq 'Fail') {
         Write-Host "`t$status" -ForegroundColor Red
     }
+
     # if (($spoActive -or $messageActive)) {
     #     if ((Get-Date -Date $groupData.renewedDateTime) -lt $warningDate) { 
     #         Write-Host "Auto-renewing $($_.groupDisplayName)"

@@ -16,16 +16,15 @@ $cac = [Microsoft.IdentityModel.Clients.ActiveDirectory.ClientAssertionCertifica
 $tokenResult = $context.AcquireTokenAsync($resource, $cac).GetAwaiter().GetResult()
 $token = $tokenResult.AccessToken
 
-#Connect-MicrosoftTeams -ApplicationId $appid -TenantId $tenantid -CertificateThumbprint $thumb
-
 function Archive-Team($groupId) {
     $uri = "https://graph.microsoft.com/v1.0/teams/$groupId/archive"
     $headers = @{"Authorization" = "Bearer " + $token}
-    $body = @"
-    {
-        "shouldSetSpoSiteReadOnlyForMembers": "true"
-    }
-"@
+    $body = "{}" # App-only does not support shouldSetSpoSiteReadOnlyForMembers
+#     $body = @"
+#     {
+#         "shouldSetSpoSiteReadOnlyForMembers": "true"
+#     }
+# "@
     Invoke-RestMethod -Method POST -ContentType "application/json" -Headers $headers -Body $body -Uri $uri -UseBasicParsing
 
 }
@@ -75,6 +74,5 @@ function Archive-Group($groupId) {
     Write-Host $AGroup.DisplayName "is now archived and" $AdminAccount "is the new group owner"    
 }
 
-
+#Archive-Group -groupId "9c918e02-8ef4-4366-9be2-fb51c653cc0c" 
 Archive-Team -groupId "9c918e02-8ef4-4366-9be2-fb51c653cc0c"
-
