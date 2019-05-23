@@ -134,7 +134,7 @@ function Get-AllowSharing($groupId) {
 }
 
 $previousItems = @()
-if ([System.IO.File]::Exists($lastFile)) {
+if ( Test-Path $lastFile -PathType Leaf ) {
     $previousReportFile = Get-Content -Path $lastFile -Encoding UTF8
     $previousItems = ConvertFrom-Csv -Delimiter ';' -InputObject $previousReportFile 
 }
@@ -168,12 +168,12 @@ $groupStats | % {
     
     $groupData = Get-GroupByName -displayName $_.groupDisplayName
 
-    if($groupData.length -gt 1) {
+    if ($groupData.length -gt 1) {
         Write-Host "`tMultiple groups returned - skipping"
         return
     }
 
-    if($groupData -eq $null) {
+    if ($groupData -eq $null) {
         Write-Host "`tGroup deleted - skipping"
         return
     }
